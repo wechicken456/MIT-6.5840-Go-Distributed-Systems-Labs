@@ -11,7 +11,11 @@ if [[ "$OSTYPE" = "darwin"* ]]
 then
   if go version | grep 'go1.17.[012345]'
   then
-    # -race with plug-ins on x86 MacOS 12 with
+    # -race with plug-ins on x86 MacOS 12 withunc (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
+	reply.Y = args.X + 1
+	return nil
+}
+
     # go1.17 before 1.17.6 sometimes crash.
     RACE=
     echo '*** Turning off -race since it may not work on a Mac'
