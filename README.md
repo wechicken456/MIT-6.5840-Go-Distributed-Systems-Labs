@@ -2,7 +2,7 @@
 
 This repo contains my implementation for the 2024 labs of this [course](https://pdos.csail.mit.edu/6.824/index.html)
 
-Forked from another student's source only to get the setup source code. All of the implementations are of my own.
+Forked from another student's [source](https://github.com/vasukalariya/MIT-Distributed-Systems-Lab-6.824-6.5840) only to get the setup source code. All of the implementations are of my own.
 
 Learned the concepts through the [course content](https://pdos.csail.mit.edu/6.824/schedule.html) and the official Go documentation.
 
