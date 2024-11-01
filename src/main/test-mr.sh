@@ -164,7 +164,7 @@ fi
 
 if cat mr-out* | grep '^parallel.* 2' > /dev/null
 then
-    cho '---' map parallelism test: PASS
+    echo '---' map parallelism test: PASS
 else
     echo '---' map workers did not run in parallel
     echo '---' map parallelism test: FAIL
