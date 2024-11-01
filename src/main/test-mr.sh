@@ -9,26 +9,22 @@
 
 if [[ "$OSTYPE" = "darwin"* ]]
 then
-  if go version | grep 'go1.17.[012345]'
-  then
-    # -race with plug-ins on x86 MacOS 12 withunc (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
-	reply.Y = args.X + 1
-	return nil
-}
-
+    if go version | grep 'go1.17.[012345]'
+    then
+    # -race with plug-ins on x86 MacOS 12 with
     # go1.17 before 1.17.6 sometimes crash.
     RACE=
     echo '*** Turning off -race since it may not work on a Mac'
     echo '    with ' `go version`
-  fi
+    fi
 fi
 
 ISQUIET=$1
 maybe_quiet() {
     if [ "$ISQUIET" == "quiet" ]; then
-      "$@" > /dev/null 2>&1
+        "$@" > /dev/null 2>&1
     else
-      "$@"
+        "$@"
     fi
 }
 
@@ -37,22 +33,22 @@ TIMEOUT=timeout
 TIMEOUT2=""
 if timeout 2s sleep 1 > /dev/null 2>&1
 then
-  :
+    :
 else
-  if gtimeout 2s sleep 1 > /dev/null 2>&1
-  then
+    if gtimeout 2s sleep 1 > /dev/null 2>&1
+    then
     TIMEOUT=gtimeout
-  else
+    else
     # no timeout command
     TIMEOUT=
     echo '*** Cannot find timeout command; proceeding without timeouts.'
-  fi
+    fi
 fi
 if [ "$TIMEOUT" != "" ]
 then
-  TIMEOUT2=$TIMEOUT
-  TIMEOUT2+=" -k 2s 120s "
-  TIMEOUT+=" -k 2s 45s "
+    TIMEOUT2=$TIMEOUT
+    TIMEOUT2+=" -k 2s 120s "
+    TIMEOUT+=" -k 2s 45s "
 fi
 
 # run the test in a fresh sub-directory.
@@ -107,11 +103,11 @@ wait $pid
 sort mr-out* | grep . > mr-wc-all
 if cmp mr-wc-all mr-correct-wc.txt
 then
-  echo '---' wc test: PASS
+    echo '---' wc test: PASS
 else
-  echo '---' wc output is not the same as mr-correct-wc.txt
-  echo '---' wc test: FAIL
-  failed_any=1
+    echo '---' wc output is not the same as mr-correct-wc.txt
+    echo '---' wc test: FAIL
+    failed_any=1
 fi
 
 # wait for remaining workers and coordinator to exit.
@@ -138,11 +134,11 @@ maybe_quiet $TIMEOUT ../mrworker ../../mrapps/indexer.so
 sort mr-out* | grep . > mr-indexer-all
 if cmp mr-indexer-all mr-correct-indexer.txt
 then
-  echo '---' indexer test: PASS
+    echo '---' indexer test: PASS
 else
-  echo '---' indexer output is not the same as mr-correct-indexer.txt
-  echo '---' indexer test: FAIL
-  failed_any=1
+    echo '---' indexer output is not the same as mr-correct-indexer.txt
+    echo '---' indexer test: FAIL
+    failed_any=1
 fi
 
 wait
@@ -161,18 +157,18 @@ maybe_quiet $TIMEOUT ../mrworker ../../mrapps/mtiming.so
 NT=`cat mr-out* | grep '^times-' | wc -l | sed 's/ //g'`
 if [ "$NT" != "2" ]
 then
-  echo '---' saw "$NT" workers rather than 2
-  echo '---' map parallelism test: FAIL
-  failed_any=1
+    echo '---' saw "$NT" workers rather than 2
+    echo '---' map parallelism test: FAIL
+    failed_any=1
 fi
 
 if cat mr-out* | grep '^parallel.* 2' > /dev/null
 then
-  echo '---' map parallelism test: PASS
+    cho '---' map parallelism test: PASS
 else
-  echo '---' map workers did not run in parallel
-  echo '---' map parallelism test: FAIL
-  failed_any=1
+    echo '---' map workers did not run in parallel
+    echo '---' map parallelism test: FAIL
+    failed_any=1
 fi
 
 wait
@@ -192,11 +188,11 @@ maybe_quiet $TIMEOUT ../mrworker ../../mrapps/rtiming.so
 NT=`cat mr-out* | grep '^[a-z] 2' | wc -l | sed 's/ //g'`
 if [ "$NT" -lt "2" ]
 then
-  echo '---' too few parallel reduces.
-  echo '---' reduce parallelism test: FAIL
-  failed_any=1
+    echo '---' too few parallel reduces.
+    echo '---' reduce parallelism test: FAIL
+    failed_any=1
 else
-  echo '---' reduce parallelism test: PASS
+    echo '---' reduce parallelism test: PASS
 fi
 
 wait
@@ -217,11 +213,11 @@ maybe_quiet $TIMEOUT ../mrworker ../../mrapps/jobcount.so
 NT=`cat mr-out* | awk '{print $2}'`
 if [ "$NT" -eq "8" ]
 then
-  echo '---' job count test: PASS
+    echo '---' job count test: PASS
 else
-  echo '---' map jobs ran incorrect number of times "($NT != 8)"
-  echo '---' job count test: FAIL
-  failed_any=1
+    echo '---' map jobs ran incorrect number of times "($NT != 8)"
+    echo '---' job count test: FAIL
+    failed_any=1
 fi
 
 wait
@@ -252,15 +248,15 @@ sleep 1
 jobs &> /dev/null
 if [[ "$OSTYPE" = "darwin"* ]]
 then
-  # bash on the Mac doesn't have wait -n
-  while [ ! -e $DF ]
-  do
+    # bash on the Mac doesn't have wait -n
+    while [ ! -e $DF ]
+    do
     sleep 0.2
-  done
+    done
 else
-  # the -n causes wait to wait for just one child process,
-  # rather than waiting for all to finish.
-  wait -n
+    # the -n causes wait to wait for just one child process,
+    # rather than waiting for all to finish.
+    wait -n
 fi
 
 rm -f $DF
@@ -276,11 +272,11 @@ wait
 sort mr-out* | grep . > mr-wc-all-final
 if cmp mr-wc-all-final mr-wc-all-initial
 then
-  echo '---' early exit test: PASS
+    echo '---' early exit test: PASS
 else
-  echo '---' output changed after first worker exited
-  echo '---' early exit test: FAIL
-  failed_any=1
+    echo '---' output changed after first worker exited
+    echo '---' early exit test: FAIL
+    failed_any=1
 fi
 rm -f mr-*
 
@@ -303,21 +299,21 @@ maybe_quiet $TIMEOUT2 ../mrworker ../../mrapps/crash.so &
 SOCKNAME=/var/tmp/5840-mr-`id -u`
 
 ( while [ -e $SOCKNAME -a ! -f mr-done ]
-  do
+    do
     maybe_quiet $TIMEOUT2 ../mrworker ../../mrapps/crash.so
     sleep 1
-  done ) &
+    done ) &
 
 ( while [ -e $SOCKNAME -a ! -f mr-done ]
-  do
+    do
     maybe_quiet $TIMEOUT2 ../mrworker ../../mrapps/crash.so
     sleep 1
-  done ) &
+    done ) &
 
 while [ -e $SOCKNAME -a ! -f mr-done ]
 do
-  maybe_quiet $TIMEOUT2 ../mrworker ../../mrapps/crash.so
-  sleep 1
+    maybe_quiet $TIMEOUT2 ../mrworker ../../mrapps/crash.so
+    sleep 1
 done
 
 wait
@@ -326,11 +322,11 @@ rm $SOCKNAME
 sort mr-out* | grep . > mr-crash-all
 if cmp mr-crash-all mr-correct-crash.txt
 then
-  echo '---' crash test: PASS
+    echo '---' crash test: PASS
 else
-  echo '---' crash output is not the same as mr-correct-crash.txt
-  echo '---' crash test: FAIL
-  failed_any=1
+    echo '---' crash output is not the same as mr-correct-crash.txt
+    echo '---' crash test: FAIL
+    failed_any=1
 fi
 
 #########################################################
