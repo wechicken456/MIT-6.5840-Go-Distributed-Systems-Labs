@@ -74,9 +74,15 @@ type LogEntry struct {
 var Follower int32 = 0
 var Candidate int32 = 1
 var Leader int32 = 2
-var ElectionTimeoutDur = 1200 // in milliseconds
+var voteCnt int = 0
+var electionTimeoutDur = 500 // in milliseconds
 var RetryTimeout = time.Duration(100) * time.Millisecond
-var appendCh chan int = make(chan int)
+
+// Election timeout to check a leader election should be started.
+var electionTimeout time.Duration
+
+// RNG for each server, use server id as seed
+var randSrc *rand.Rand
 
 // A Go object implementing a single Raft peer.
 type Raft struct {
@@ -89,8 +95,8 @@ type Raft struct {
 	// Your data here (3A, 3B, 3C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
-
-	state int32 // 0 for leader, 1 for candidate, 2 for leader
+	lastElectionTime time.Time
+	state            int32 // 0 for leader, 1 for candidate, 2 for leader
 
 	// persistent state on all servers
 	currentTerm int        // last term server has seen (init'ed to 0, increases monotically)
@@ -275,16 +281,17 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.currentTerm = args.Term
 		rf.votedFor = -1
 		rf.LeaderId = args.LeaderId
+		voteCnt = 1
+		rf.lastElectionTime = time.Now() // reset election timeout
 		DPrintf("Debug, Server %d, State %d: received AppendEntriesRPC from %d, convert to follower \n", rf.me, rf.state, args.LeaderId)
 		rf.mu.Unlock()
-		go func() { appendCh <- 1 }()
 		return
 	}
 	reply.Term = rf.currentTerm
 	rf.mu.Unlock()
 }
 
-func (rf *Raft) sendAppendEntriesRPCToPeer(peerId int, retryCh chan int) {
+func (rf *Raft) sendAppendEntriesRPCToPeer(peerId int) {
 
 	rf.mu.Lock()
 	logLen := len(rf.log)
@@ -304,67 +311,30 @@ func (rf *Raft) sendAppendEntriesRPCToPeer(peerId int, retryCh chan int) {
 	DPrintf("Debug, Leader %d: FINISHED AppendEntries RPC to peer %d \n", rf.me, peerId)
 
 	rf.mu.Lock()
+	if rf.state != Leader {
+		rf.mu.Unlock()
+		return
+	}
 	if ok {
 		if reply.Term > rf.currentTerm {
 			rf.state = Follower
 			rf.currentTerm = reply.Term
 			rf.votedFor = -1
 			rf.LeaderId = -1
+			voteCnt = 1
+			rf.lastElectionTime = time.Now() // reset election timeout
+
 		}
-		rf.mu.Unlock()
 		DPrintf("Debug, Leader %d: SUCCEEDED AppendEntries RPC to peer %d \n", rf.me, peerId)
 	} else {
 		DPrintf("Debug, Leader %d: FAILED AppendEntries RPC to peer %d \n", rf.me, peerId)
-		if rf.state == Leader { // our state could've changed. If it has, then retryCh will be nil (as we returned from replicateLogs()), which will cause this write to block forever
-			rf.mu.Unlock()
-			go func() { retryCh <- peerId }()
-		} else {
-			rf.mu.Unlock()
-		}
+		go func() {
+			time.Sleep(time.Duration(100) * time.Millisecond)
+			rf.sendAppendEntriesRPCToPeer(peerId)
+		}()
 	}
-}
+	rf.mu.Unlock()
 
-func (rf *Raft) replicateLogs() {
-	retryCh := make(chan int)
-	heartBeatDur := time.Duration(100) * time.Millisecond
-	heartBeatChan := make(chan int)
-	go func() {
-		heartBeatChan <- 1
-		for {
-			rf.mu.Lock()
-			if rf.state != Leader {
-				rf.mu.Unlock()
-				return
-			}
-			rf.mu.Unlock()
-			time.Sleep(heartBeatDur)
-			heartBeatChan <- 1
-		}
-	}()
-	select {
-	case <-heartBeatChan:
-		rf.mu.Lock()
-		if rf.state != Leader {
-			rf.mu.Unlock()
-			return
-		}
-		rf.mu.Unlock()
-		for i := 0; i < len(rf.peers); i++ {
-			if i != rf.me {
-				go rf.sendAppendEntriesRPCToPeer(i, retryCh)
-			}
-		}
-
-	case peerId := <-retryCh:
-		rf.mu.Lock()
-		if rf.state != Leader {
-			rf.mu.Unlock()
-			return
-		}
-		rf.mu.Unlock()
-		go rf.sendAppendEntriesRPCToPeer(peerId, retryCh)
-		break
-	}
 }
 
 // example RequestVote RPC handler.
@@ -397,7 +367,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	reply.Term = rf.currentTerm
 }
 
-func (rf *Raft) requestVoteFromPeers(peerId int, voteCh chan bool, retryCh chan int) {
+func (rf *Raft) requestVoteFromPeers(peerId int) {
 
 	rf.mu.Lock()
 	logLen := len(rf.log)
@@ -422,41 +392,76 @@ func (rf *Raft) requestVoteFromPeers(peerId int, voteCh chan bool, retryCh chan 
 
 	if ok {
 		if reply.VoteGranted {
-			rf.mu.Unlock()
-			go func() { voteCh <- true }()
+			voteCnt++
 			DPrintf("Debug, Candidate %d: RECEIVED vote from peer %d\n", rf.me, peerId)
-		} else {
+			if voteCnt > int(len(rf.peers)/2) {
+				DPrintf("Debug, Candidate %d: got majority \n", rf.me)
+				rf.state = Leader
+				rf.votedFor = -1
+				rf.LeaderId = rf.me
+				for i := 0; i < len(rf.peers); i++ {
+					rf.nextIndex[i] = rf.log[len(rf.log)-1].TermIndex
+				}
+			}
+		} else { // stop election
+
 			if rf.currentTerm < reply.Term {
 				rf.state = Follower
 				rf.currentTerm = reply.Term
 				rf.votedFor = -1
 				rf.LeaderId = -1
+				voteCnt = 1
 				rf.persist()
-
 				DPrintf("Debug, Candidate %d: didn't get vote from peer %d. Reseting to FOLLOWER\n", rf.me, peerId)
-				// stop election
-				rf.mu.Unlock()
-				go func() { voteCh <- false }()
-			} else {
-				rf.mu.Unlock()
 			}
 		}
 	} else { // call failed, retry
 		DPrintf("Debug, Candidate %d: failed reach peer %d for vote \n", rf.me, peerId)
-		rf.mu.Unlock()
-		go func() { retryCh <- peerId }()
+	}
+	rf.mu.Unlock()
+}
+
+func (rf *Raft) replicateLogs() {
+	heartBeatDur := time.Duration(100) * time.Millisecond
+	for !rf.killed() {
+		for i := 0; i < len(rf.peers); i++ {
+			rf.mu.Lock()
+			if rf.state != Leader {
+				rf.mu.Unlock()
+				return
+			}
+			if i == rf.me {
+				rf.mu.Unlock()
+				continue
+			}
+			rf.mu.Unlock()
+			go rf.sendAppendEntriesRPCToPeer(i)
+		}
+		time.Sleep(heartBeatDur)
+	}
+}
+
+func (rf *Raft) startElection() {
+
+	DPrintf("Debug, Candidate %d: timed out, calling new election \n", rf.me)
+	rf.state = Candidate
+	rf.currentTerm += 1
+	rf.votedFor = rf.me
+	rf.LeaderId = -1
+	voteCnt = 1
+
+	for i := 0; i < len(rf.peers); i++ {
+		if i != rf.me {
+			go rf.requestVoteFromPeers(i)
+		}
 	}
 }
 
 func (rf *Raft) ticker() {
 
-	voteCnt := 1
-	voteCh := make(chan bool) // true if received a vote, false to end voting process.
-	retryCh := make(chan int) // has peer Ids to resend RequestVoteRPCs to.
-
-	// Election timeout to check a leader election should be started.
-	electionTimeout := time.Duration(int64(ElectionTimeoutDur)+(rand.Int63()%1200)) * time.Millisecond
-	electionTimeoutTimer := time.NewTimer(electionTimeout)
+	voteCnt = 1
+	electionTimeout = time.Duration(int64(electionTimeoutDur)+(randSrc.Int63()%800)) * time.Millisecond
+	rf.lastElectionTime = time.Now()
 	DPrintf("Debug, election timeout: %v\n", electionTimeout)
 
 	for !rf.killed() {
@@ -467,77 +472,30 @@ func (rf *Raft) ticker() {
 			rf.replicateLogs()
 		} else {
 			rf.mu.Unlock()
-			select {
-			case stillVoting := <-voteCh:
-				DPrintf("Debug, Candidate %d: BEFORE grabbing vote lock \n", rf.me)
-				rf.mu.Lock()
-				DPrintf("Debug, Candidate %d: AFTER grabbing vote lock \n", rf.me)
-				if !stillVoting || rf.state == Follower { // done with voting process (a leader has been elected)
-					rf.mu.Unlock()
-					break
-				}
-				voteCnt += 1
-				DPrintf("Debug, Candidate %d: got +1 vote \n", rf.me)
-				if voteCnt > int(len(rf.peers)/2) {
-					DPrintf("Debug, Candidate %d: got majority \n", rf.me)
-					rf.state = Leader
-					rf.votedFor = -1
-					rf.LeaderId = rf.me
-					for i := 0; i < len(rf.peers); i++ {
-						rf.nextIndex[i] = len(rf.log)
-					}
-					rf.mu.Unlock()
-					go func() { voteCh <- false }()
-					break
-				}
-				rf.mu.Unlock()
-				// don't break here as we're still in the voting process, so we shouldn't reset the election timeout
+			if time.Since(rf.lastElectionTime) > electionTimeout {
+				DPrintf("Debug, Candidate %d: timed out, calling new election \n", rf.me)
+				rf.lastElectionTime = time.Now()
+				electionTimeout = time.Duration(int64(electionTimeoutDur)+(randSrc.Int63()%500)) * time.Millisecond
 
-			case <-electionTimeoutTimer.C:
 				rf.mu.Lock()
-				DPrintf("Debug, Candidate %d: timed out, votedFor: %d\n", rf.me, rf.votedFor)
-				if !rf.killed() && ((rf.votedFor == -1 && rf.LeaderId == -1) || rf.votedFor == rf.me) {
+				// 1st clause: if we haven't voted for anyone, and a leader hasn't been elected
+				// 2nd clause: if we have elected ourselves, but we're not the leader (leader check was in the outer if)
+				if (rf.votedFor == -1 && rf.LeaderId == -1) || rf.votedFor == rf.me {
+					rf.mu.Unlock()
+					rf.startElection()
+				} else {
+					rf.mu.Unlock()
+				}
 
-					DPrintf("Debug, Candidate %d: timed out, calling new election \n", rf.me)
-					rf.state = Candidate
-					rf.currentTerm += 1
-					rf.votedFor = rf.me
+				rf.mu.Lock()
+				if rf.state != Leader { // reset after each election/term, as now we're just a follower
 					rf.LeaderId = -1
-					voteCnt = 1
-					for i := 0; i < len(rf.peers); i++ {
-						if i != rf.me {
-							go rf.requestVoteFromPeers(i, voteCh, retryCh)
-						}
-					}
+					rf.votedFor = -1
 				}
 				rf.mu.Unlock()
-				break
-
-			case peerId := <-retryCh: // case we need to resend RequestVote to antoher peer.
-				rf.mu.Lock()
-				// check if we're still in Candidate state, as there could be a new leader already.
-				if !rf.killed() && rf.state == Candidate {
-					go rf.requestVoteFromPeers(peerId, voteCh, retryCh)
-				}
-				rf.mu.Unlock()
-				// don't break here as we're still in the voting process, so we shouldn't reset the election timeout
-
-			case <-appendCh: // received a VALID (leader is still legitimate) AppendEntriesRPC, could be new entries or heartbeat, either way break to reset electionTimeout
-				break
 			}
-
-			// when the election process for a new term just finished, the newly elected leader doesn't have to wait to reset the timer.
-			// In fact, it MUSTN'T wait.
-			rf.mu.Lock()
-			if rf.state != Leader {
-				rf.LeaderId = -1 // reset the leader to none.
-				rf.votedFor = -1
-				// If we received an AppendEntriesRPC during this time out, then LeaderId will != -1, otherwise we know that we need to start a new election
-				go electionTimeoutTimer.Reset(electionTimeout)
-			}
-			rf.mu.Unlock()
 		}
-
+		time.Sleep(time.Duration(50+randSrc.Int63()%250) * time.Millisecond)
 	}
 }
 
@@ -564,6 +522,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.nextIndex = make([]int, len(peers))
 
 	// Your initialization code here (3A, 3B, 3C).
+	randSrc = rand.New(rand.NewSource(int64(rf.me))) // a different seed for each server
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
