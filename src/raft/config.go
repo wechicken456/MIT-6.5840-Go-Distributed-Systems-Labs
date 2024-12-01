@@ -508,7 +508,9 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
 			}
 			count += 1
 			cmd = cmd1
-		}
+		} //else {
+		// 	fmt.Printf("Server %d doesn't have log at index %d\n", i, index)
+		// }
 	}
 	return count, cmd
 }
@@ -585,6 +587,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 			t1 := time.Now()
 			for time.Since(t1).Seconds() < 2 {
 				nd, cmd1 := cfg.nCommitted(index)
+				//fmt.Printf("cmd: %v, num agreed: %d\n", cmd1, nd)
 				if nd > 0 && nd >= expectedServers {
 					// committed
 					if cmd1 == cmd {
