@@ -500,7 +500,7 @@ func (rf *Raft) sendHeartBeatToPeer(peerId int) {
 	// 	EntriesLen:        0}
 	// reply := &AppendEntriesReply{}
 	// rf.mu.Unlock()
-	rf.sendAppendEntriesToPeers(peerId, true, 1)
+	rf.sendAppendEntriesToPeers(peerId, true, len(rf.log))
 }
 
 // example RequestVote RPC handler.
@@ -651,13 +651,13 @@ func (rf *Raft) ticker() {
 
 				rf.mu.Lock()
 				// 1st clause: if we haven't voted for anyone, and a leader hasn't been elected
-				// 2nd clause: if we have elected ourselves, but we're not the leader (leader check was in the outer if)
+				// 2nd clause: if we have elected ourselves, but we're not the leader (leader check was in the outer if), so we start another election
 				if (rf.votedFor == -1 && rf.LeaderId == -1) || rf.votedFor == rf.me {
 					rf.startElection()
 				}
 				if rf.state != Leader { // reset after each election/term, as now we're just a follower
 					rf.LeaderId = -1
-					//rf.votedFor = -1
+					rf.votedFor = -1
 				}
 				rf.mu.Unlock()
 			}
