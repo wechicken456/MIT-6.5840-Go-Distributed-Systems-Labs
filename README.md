@@ -7,7 +7,7 @@ Forked from another student's [source](https://github.com/vasukalariya/MIT-Distr
 Learned the concepts through the [course content](https://pdos.csail.mit.edu/6.824/schedule.html) and the official Go documentation.
 
 
-## Lab 1: Map Reduce
+# Lab 1: Map Reduce
 
 Takeaways:
  - The reply argument in the RPC call MUST be initialized to default values.
@@ -18,9 +18,9 @@ Takeaways:
 
 
 
-## Lab 2: Raft
+# Lab 2: Raft
 
-### Dev notes
+## Dev notes
 
 
 When sending an AppendEntriesRPC to a follower using `sendAppenEntriesToPeers(peerId int, isEmpty bool)`, we can't just assign `PrevLogIndex = rf.nextIndex[peerId] - 1`:
@@ -58,10 +58,22 @@ However, consider the following scenario:
 
 [+] Solution: we need to add another argument to `senAppendEntriesToPeer` to take an argument `sendEntriesFromIndex`. Then, the leader will send to that peer all entries starting from `sendEntriesFromIndex` until the end. 
 
+### Heartbeat
+
+When sending a heartbeat, we need to set `PrevLogIndex` to `len(rf.log)` since an `PrevLogIndex` stands for the index of the log immediately preceding the new ones. But since the new entries are empty for a heartbeat, it means we're at the end of the log. 
+
+This will help solve the case of a rejoined leader:
+
+1. There are 3 servers. Leader is **0**. Initially, all 3 have `[0]` in their logs with term 1.
+2. Then **Leader 0** disconnects from the cluster. **1** is elected to be next leader of term 2.
+3. **0** still thinks it's connected to the server, and begins replicating `[1,2,3]` in its log with term 1.
+4. **1** and **2** replicate `[3]` with term 2. Now the logs look like:
+    - **0**: `[0,1,2,3]`.
+    - **1**: `[0,3]`.
+    - **2**: `[0,3]`.
+5. **Leader 1** crashses, and **0** rejoins.
+6. **2** should become the new leader, since its entry `3` at index `1` has term **2**, while the same entry of server **0** has term **1**.
+7. Now, we need to replicate **2**'s log to **0**. **Leader 2** sends a heartbeat to **0**. But how does **0** know that its entry at index `1` is invalid?
+8. => Even though **Leader 2** is sending an empty entry, it can still sets its argument `PrevLogIndex` and `PrevLogTerm` to the last one in **2**'s log (a.k.a `3` with term 2). This will force **0** to discard everything from its entry `1` at index `1` (with term 1) to the end.
 
 
-
-4. RPC2 arrives at follower `F` first, response comes back first
-5. The response updates `nextIndex[F]` to 6 and `matchIndex[F]` to 5
-6. RPC1 response arrives later
-7. Your check args.PrevLogIndex+args.EntriesLen >= rf.nextIndex[peerId] becomes 3+1 >= 6, which is false. So you don't update matchIndex for entry 4, but it was actually replicated. This causes the commit logic to consider entry 4 as unreplicated
