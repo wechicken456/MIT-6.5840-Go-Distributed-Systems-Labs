@@ -9,7 +9,12 @@ Learned the concepts through the [course content](https://pdos.csail.mit.edu/6.8
 
 # Lab 1: Map Reduce
 
-Takeaways:
+## Status
+Finished
+
+
+## Dev notes
+
  - The reply argument in the RPC call MUST be initialized to default values.
  - Check the capitalization of struct member names and methods for visibility scopes.
  - Use some sort of exit notification from coordinator when worker pings coordinator and there are no tasks available.
@@ -18,7 +23,18 @@ Takeaways:
 
 
 
-# Lab 2: Raft
+# Lab 3: Raft
+
+Goal: to implement the Raft consensus algorithm presented in this [paper](https://pdos.csail.mit.edu/6.824/papers/raft-extended.pdf).
+
+## Status
+Finished 3A and 3B tests, including:
+
+- Everything related to leader elections
+- Recovering from leader and peer failures
+- Committing logs
+- Sending heartbeats
+
 
 ## Dev notes
 
@@ -36,7 +52,7 @@ args.PrevLogTerm = rf.log[args.PrevLogIndex].TermIndex // term of the PrevLogInd
 
 /* isEmpty is True if the leader is sending a heartbeat */
 if isEmpty || rf.nextIndex[peerId] == len(rf.log) {
-    args.Entries = nil
+    args.Entas $k \rightarrow \infty$:ries = nil
     args.EntriesLen = 0
 } else {
     args.Entries = rf.log[args.PrevLogIndex+1:]
